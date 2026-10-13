@@ -16,6 +16,7 @@ const DEVICES = [
   ['iPad Pro 12.9"', 1024, 1366],
 ];
 const SETUPS = [
+  { playerCount: 1, count: 8 },
   { playerCount: 2, count: 16 },
   { playerCount: 4, count: 24 },
   { playerCount: 6, count: 48 },
@@ -46,7 +47,7 @@ function settingsFor(over = {}) {
   };
 }
 
-async function open(browser, { w = 393, h = 852, scheme = 'dark', settings = settingsFor() } = {}) {
+async function open(browser, { w = 393, h = 852, scheme = 'dark', settings = settingsFor(), storage = null } = {}) {
   const ctx = await browser.newContext({
     viewport: { width: w, height: h },
     deviceScaleFactor: 2,
@@ -55,15 +56,16 @@ async function open(browser, { w = 393, h = 852, scheme = 'dark', settings = set
     colorScheme: scheme,
     reducedMotion: 'reduce',
   });
-  await ctx.addInitScript(s => {
+  await ctx.addInitScript(([s, extra]) => {
     try {
       if (!sessionStorage.getItem('seeded')) {
         localStorage.clear();
-        localStorage.setItem('pairpals.settings.v1', JSON.stringify(s));
+        if (s) localStorage.setItem('pairpals.settings.v1', JSON.stringify(s));
+        Object.entries(extra || {}).forEach(([k, v]) => localStorage.setItem(k, v));
         sessionStorage.setItem('seeded', '1');
       }
     } catch (e) { /* ignore */ }
-  }, settings);
+  }, [settings, storage]);
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
@@ -228,6 +230,79 @@ async function ruleChecks(browser) {
     await page.waitForFunction(() => window.PairPals && window.PairPals.game);
     const after = await state(page);
     check(JSON.stringify(before) === JSON.stringify(after), `reload restores the game (${JSON.stringify(before)} vs ${JSON.stringify(after)})`);
+    await ctx.close();
+  }
+  {
+    // Taps during the deal or the peek must not start a turn.
+    const { ctx, page, errors } = await open(browser, { settings: settingsFor({ playerCount: 2, count: 16, peek: true }) });
+    await page.evaluate(() => window.PairPals.newGame());
+    const k = await keys(page);
+    await tap(page, 0);
+    await tap(page, k.findIndex(x => x !== k[0]));
+    const during = await page.evaluate(() => ({ phase: window.PairPals.phase, up: window.PairPals.game.cards.filter(c => c.s === 1).length }));
+    check(during.phase === 'peek' && during.up === 0, `peek: taps are ignored while cards are shown (${JSON.stringify(during)})`);
+    await page.waitForFunction(() => window.PairPals.phase === 'idle', null, { timeout: 6000 });
+    await playMatch(page);
+    const s = await state(page);
+    check(s.scores.join() === '1,0' && (await page.locator('.card.is-up').count()) === 0, `peek: play works after the peek (scores ${s.scores})`);
+    check(errors.length === 0, `peek: errors ${errors.join(' | ')}`);
+    await ctx.close();
+  }
+  {
+    // With "go again" off, taps in the hand-over pause must not score for anyone.
+    const { ctx, page } = await open(browser, { settings: settingsFor({ playerCount: 2, count: 12, again: false }) });
+    const k = await keys(page);
+    const a = 0;
+    const b = k.findIndex((x, j) => j > 0 && x === k[0]);
+    await tap(page, a);
+    await tap(page, b);
+    await page.waitForFunction(() => window.PairPals.phase === 'pass');
+    const k2 = await keys(page);
+    const c = k2.findIndex(x => x >= 0);
+    const d = k2.findIndex((x, j) => j !== c && x === k2[c]);
+    await tap(page, c);
+    await tap(page, d);
+    await page.waitForTimeout(900);
+    await idle(page);
+    const s = await state(page);
+    check(s.scores.join() === '1,0' && s.turn === 1 && s.matched === 2, `hand-over pause ignores taps (scores ${s.scores}, turn ${s.turn}, matched ${s.matched})`);
+    await ctx.close();
+  }
+  {
+    // First launch: setup opens, and the first deal starts with Player 1.
+    const { ctx, page } = await open(browser, { settings: null });
+    check(await page.evaluate(() => document.getElementById('setup').open), 'first launch opens the setup sheet');
+    await page.click('#setup-deal');
+    await page.waitForTimeout(300);
+    const s = await state(page);
+    check(s.turn === 0, `first launch: Player 1 goes first (turn ${s.turn})`);
+    await ctx.close();
+  }
+  {
+    // Damaged saved data must not stop the game from loading.
+    const storage = {
+      'pairpals.game.v1': JSON.stringify({ v: 1, players: [null, { name: 'B' }], scores: [0, 0], items: [{ type: 'emoji', v: '🐶' }], cards: [{ k: 0, s: 0 }, { k: 0, s: 0 }], found: ['ab', [7]] }),
+      'pairpals.best.v1': '5',
+    };
+    const { ctx, page, errors } = await open(browser, { settings: settingsFor({ playerCount: 1, count: 8 }), storage });
+    const n = await page.locator('.card').count();
+    check(n >= 2 && errors.length === 0, `damaged storage still loads (${n} cards, errors ${errors.join(' | ')})`);
+    await page.evaluate(() => window.PairPals.newGame());
+    for (let i = 0; i < 4; i++) await playMatch(page);
+    await page.waitForTimeout(1200);
+    check(await page.evaluate(() => document.getElementById('results').open), 'damaged best scores still show results');
+    await ctx.close();
+  }
+  {
+    // Phone landscape results keep the ranking and buttons on screen.
+    const { ctx, page } = await open(browser, { w: 852, h: 330, settings: settingsFor({ playerCount: 4, count: 8 }) });
+    for (let i = 0; i < 4; i++) await playMatch(page);
+    await page.waitForTimeout(1200);
+    const m = await page.evaluate(() => {
+      const r = s => document.querySelector(s).getBoundingClientRect();
+      return { card: r('.results-card'), list: r('#ranking'), again: r('#res-again'), ih: innerHeight };
+    });
+    check(m.list.height >= 120 && m.again.bottom <= m.card.bottom && m.card.bottom <= m.ih, `landscape results fit (ranking ${m.list.height.toFixed(0)}px, button bottom ${m.again.bottom.toFixed(0)}, card bottom ${m.card.bottom.toFixed(0)})`);
     await ctx.close();
   }
   {

@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Pair Pals Memory</title>
 <meta name="description" content="A pass-and-play memory card game for 1 to 6 players. Pick the pictures, pick how many cards, and see who finds the most pairs.">
-<meta name="theme-color" content="#0e3d45">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0e3d45">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#e9f9f5">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -16,6 +17,14 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Lilita+One&display=swap">
+<script>
+  // Offline copy for the home-screen app (sw.js). Skipped on file:// and inside embedded viewers.
+  try {
+    if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost') && window.top === window) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+    }
+  } catch (e) { /* unsupported */ }
+</script>
 <style>
 /* Layout: a felt card table. Scores sit above the cards in portrait and in a side rail in
    landscape; the card grid is sized in script to fill whatever space is left. */
@@ -34,6 +43,8 @@
   --focus: #ffe07a;
   --shadow: rgba(0, 10, 13, .45);
   --grain: .2;
+  --inset: var(--felt-lo);
+  --status-strip: #06262c;
 
   /* Card stock and accents look the same on both tables. */
   --sun: #ffc83d;
@@ -69,8 +80,10 @@
     --panel-hi: #ffffff;
     --line: rgba(12, 62, 70, .15);
     --ink: #0e3138;
-    --ink-soft: #476a6e;
+    --ink-soft: #3d5f63;
     --gold: #9a5b00;
+    --inset: #e6f4f1;
+    --status-strip: #2c6f78;
     --focus: #0e6f7c;
     --shadow: rgba(18, 74, 82, .22);
     --grain: .1;
@@ -89,8 +102,10 @@
   --panel-hi: #ffffff;
   --line: rgba(12, 62, 70, .15);
   --ink: #0e3138;
-  --ink-soft: #476a6e;
+  --ink-soft: #3d5f63;
   --gold: #9a5b00;
+  --inset: #e6f4f1;
+  --status-strip: #2c6f78;
   --focus: #0e6f7c;
   --shadow: rgba(18, 74, 82, .22);
   --grain: .1;
@@ -113,6 +128,8 @@
   --focus: #ffe07a;
   --shadow: rgba(0, 10, 13, .45);
   --grain: .2;
+  --inset: var(--felt-lo);
+  --status-strip: #06262c;
   --tangerine: #ff7a3d;
   --tangerine-hi: #ff9b60;
   --tangerine-lo: #cf4f17;
@@ -124,7 +141,8 @@ html {
   height: 100%;
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
-  background: var(--felt-lo);
+  /* A darker strip behind the iOS status bar keeps its white text readable on the light table. */
+  background: linear-gradient(var(--status-strip), var(--status-strip)) top / 100% env(safe-area-inset-top, 0px) no-repeat, var(--felt-lo);
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
 }
@@ -158,7 +176,7 @@ body::before {
 }
 input, textarea { -webkit-user-select: text; user-select: text; }
 button { font: inherit; color: inherit; }
-:focus { outline: none; }
+:focus:not(:focus-visible) { outline: none; }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
@@ -278,6 +296,11 @@ button { font: inherit; color: inherit; }
 .icon-btn[aria-pressed="false"] .i-on { display: none; }
 .icon-btn[aria-pressed="false"] .i-off { display: block; }
 .btn-new .short { display: none; }
+@media (max-width: 389px) {
+  .brand { gap: 8px; }
+  .brand-mark { width: 36px; height: 36px; }
+  .brand-name { font-size: 24px; }
+}
 @media (max-width: 359px) {
   .btn-new .long { display: none; }
   .btn-new .short { display: inline; }
@@ -299,6 +322,10 @@ button { font: inherit; color: inherit; }
 }
 .status b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
 .solo-stats { display: flex; gap: 12px; font-variant-numeric: tabular-nums; }
+@media (min-aspect-ratio: 6/5) {
+  .status { grid-template-columns: minmax(0, 1fr); }
+  .solo-stats { justify-content: space-between; }
+}
 .bar {
   grid-column: 1 / -1;
   height: 8px;
@@ -329,7 +356,7 @@ button { font: inherit; color: inherit; }
 }
 @media (min-aspect-ratio: 6/5) {
   .players {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr));
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: 12px 4px 4px;
@@ -352,7 +379,7 @@ button { font: inherit; color: inherit; }
   transition: background-color .3s, box-shadow .3s, transform .3s;
 }
 .player.is-turn {
-  background: var(--pc-soft);
+  background: linear-gradient(var(--pc-soft), var(--pc-soft)), var(--panel-hi);
   box-shadow: inset 0 0 0 2px var(--pc), 0 0 0 4px var(--pc-glow), 0 10px 22px var(--shadow);
   transform: translateY(-1px);
 }
@@ -380,16 +407,21 @@ button { font: inherit; color: inherit; }
   text-overflow: ellipsis;
   align-self: end;
 }
+/* Found pictures wrap onto as many lines as layoutPlayers() allows; whole pictures only. */
 .p-found {
+  --found-line: 20px;
   grid-area: found;
   display: flex;
-  gap: 3px;
-  height: 20px;
+  flex-wrap: wrap;
+  gap: 4px 3px;
+  min-height: var(--found-line);
+  max-height: calc(var(--found-rows, 1) * (var(--found-line) + 4px) - 4px);
   overflow: hidden;
   align-self: start;
   align-items: center;
+  align-content: flex-start;
 }
-.p-found span { font-family: var(--font-emoji); font-size: 15px; line-height: 1; flex: none; }
+.p-found span { font-family: var(--font-emoji); font-size: 15px; line-height: var(--found-line); flex: none; }
 .p-found .is-text { font-family: var(--font-display); font-size: 12px; color: var(--ink-soft); }
 .p-found img { width: 18px; height: 18px; border-radius: 5px; object-fit: cover; flex: none; }
 .p-found .empty { font-family: var(--font-ui); font-size: 12px; color: var(--ink-soft); }
@@ -462,6 +494,45 @@ button { font: inherit; color: inherit; }
 .players[data-tight] .p-avatar { width: 32px; height: 32px; font-size: 19px; }
 .players[data-tight] .p-score b { font-size: 23px; }
 .players[data-tight] .p-score small { display: none; }
+
+/* Phone landscape with many players: two columns of avatar + score. */
+.players[data-mode="mini"] { row-gap: 10px; }
+.players[data-mode="mini"] .player {
+  grid-template-columns: auto auto;
+  grid-template-areas: "av score";
+  justify-content: center;
+  padding: 4px 10px 4px 4px;
+}
+.players[data-mode="mini"] .p-name,
+.players[data-mode="mini"] .p-found { display: none; }
+
+/* Short portrait screens with 5-6 players: one slim row. */
+.players[data-mode="col"] { gap: 12px 6px; }
+.players[data-mode="col"] .player {
+  grid-template-columns: auto;
+  grid-template-areas: "av" "score";
+  justify-items: center;
+  padding: 6px 4px;
+  row-gap: 2px;
+}
+.players[data-mode="col"] .p-name,
+.players[data-mode="col"] .p-found,
+.players[data-mode="col"] .p-score small { display: none; }
+.players[data-mode="col"] .p-avatar { width: 32px; height: 32px; font-size: 19px; }
+.players[data-mode="col"] .p-score b { font-size: 22px; }
+.players[data-mode="col"] .p-tag { font-size: 9px; padding: 1px 6px 2px; }
+
+/* iPad landscape rail: bigger chips that read from across the table. */
+.players[data-roomy] { gap: 18px; padding-top: 18px; }
+.players[data-roomy] .player { padding: 14px 16px 14px 12px; border-radius: 24px; column-gap: 14px; }
+.players[data-roomy] .p-avatar { width: 60px; height: 60px; font-size: 36px; }
+.players[data-roomy] .p-name { font-size: 18px; }
+.players[data-roomy] .p-found { --found-line: 24px; }
+.players[data-roomy] .p-found span:not(.empty) { font-size: 18px; }
+.players[data-roomy] .p-found .empty { font-size: 14px; }
+.players[data-roomy] .p-found img { width: 22px; height: 22px; }
+.players[data-roomy] .p-score b { font-size: 44px; }
+.players[data-roomy] .p-tag { font-size: 13px; top: -12px; }
 
 /* ---------- Table and board ---------- */
 .table {
@@ -579,9 +650,8 @@ button { font: inherit; color: inherit; }
   font-family: var(--font-display);
   font-size: calc(var(--m) * var(--ts, .44));
   color: var(--ink-card);
-  max-width: 92%;
   text-align: center;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
 }
 .pic.is-photo {
   width: 84%;
@@ -657,6 +727,10 @@ button { font: inherit; color: inherit; }
   pointer-events: none;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
+/* In portrait the banner rides on the table's top edge, over the progress bar, not the cards. */
+@media not all and (min-aspect-ratio: 6/5) {
+  .toast { top: -22px; }
+}
 .toast .t-av {
   width: 32px;
   height: 32px;
@@ -684,11 +758,15 @@ dialog::backdrop {
   -webkit-backdrop-filter: blur(3px);
   backdrop-filter: blur(3px);
 }
+dialog:not([open]) { display: none; }
 .sheet {
   position: fixed;
+  inset: 0;
+  z-index: 10;
   width: min(100%, 640px);
+  height: fit-content;
   max-width: 100%;
-  max-height: calc(100% - 20px);
+  max-height: calc(100% - 20px - env(safe-area-inset-top, 0px));
   margin: auto auto 0;
   border-radius: 28px 28px 0 0;
   box-shadow: 0 -12px 40px var(--shadow);
@@ -700,7 +778,7 @@ dialog::backdrop {
   animation: sheet-up .38s cubic-bezier(.2, .9, .3, 1);
 }
 @media (min-width: 700px) and (min-height: 640px) {
-  .sheet { margin: auto; border-radius: 28px; max-height: calc(100% - 48px); box-shadow: 0 24px 60px var(--shadow); }
+  .sheet { margin: auto; border-radius: 28px; max-height: calc(100% - 48px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); box-shadow: 0 24px 60px var(--shadow); }
 }
 @media (max-height: 560px) and (min-aspect-ratio: 6/5) {
   .sheet { width: min(100% - 32px, 720px); margin: auto; border-radius: 24px; max-height: calc(100% - 16px); }
@@ -710,7 +788,8 @@ dialog::backdrop {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 16px 16px 6px 22px;
+  padding: 16px 16px 10px 22px;
+  border-bottom: 1px solid var(--line);
 }
 .sheet-head h2 {
   outline: none;
@@ -827,7 +906,7 @@ dialog::backdrop {
   box-shadow: inset 0 0 0 1px var(--line);
 }
 .name-input:focus { box-shadow: inset 0 0 0 2px var(--pc); outline: none; }
-.name-input::placeholder { color: var(--ink-soft); opacity: .8; }
+.name-input::placeholder { color: var(--ink-soft); opacity: 1; }
 .avatar-pick {
   grid-column: 1 / -1;
   display: grid;
@@ -835,7 +914,7 @@ dialog::backdrop {
   gap: 4px;
   padding: 8px;
   border-radius: 16px;
-  background: var(--felt-lo);
+  background: var(--inset);
   box-shadow: inset 0 0 0 1px var(--line);
 }
 .avatar-pick button {
@@ -910,7 +989,7 @@ dialog::backdrop {
   margin-top: 12px;
   padding: 14px;
   border-radius: 18px;
-  background: var(--felt-lo);
+  background: var(--inset);
   box-shadow: inset 0 0 0 1px var(--line);
 }
 .custom label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 8px; }
@@ -926,8 +1005,8 @@ dialog::backdrop {
   background: var(--panel-hi);
   box-shadow: inset 0 0 0 1px var(--line);
 }
-.custom textarea:focus { box-shadow: inset 0 0 0 2px var(--sun); outline: none; }
-.custom textarea::placeholder { color: var(--ink-soft); opacity: .8; }
+.custom textarea:focus { box-shadow: inset 0 0 0 2px var(--focus); outline: none; }
+.custom textarea::placeholder { color: var(--ink-soft); opacity: 1; }
 .photo-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
 .thumbs {
   list-style: none;
@@ -1008,7 +1087,7 @@ dialog::backdrop {
 .results[open] {
   display: grid;
   place-items: center;
-  padding: 16px;
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
   animation: none;
 }
 .results-card {
@@ -1025,12 +1104,13 @@ dialog::backdrop {
   animation: card-in .5s cubic-bezier(.2, .9, .3, 1.2);
 }
 .results-hero {
-  padding: 26px 22px 8px;
+  padding: 40px 22px 8px;
   text-align: center;
 }
-.res-avatars { display: flex; justify-content: center; gap: 10px; }
+.res-avatars { display: flex; justify-content: center; align-items: flex-start; gap: 14px; }
 .res-avatar {
   position: relative;
+  flex: none;
   width: 84px;
   height: 84px;
   display: grid;
@@ -1052,11 +1132,25 @@ dialog::backdrop {
   font-size: 32px;
 }
 .res-avatar.no-crown::before { content: none; }
-.res-avatars.many .res-avatar { width: 64px; height: 64px; font-size: 36px; }
+.res-avatars.many { gap: 12px; }
+.res-avatars.many .res-avatar {
+  width: 64px;
+  height: 64px;
+  font-size: 36px;
+  box-shadow: inset 0 -4px 0 rgba(0, 0, 0, .16), 0 0 0 4px var(--pc-glow);
+}
 .res-avatars.many .res-avatar::before { font-size: 24px; top: -20px; }
+.res-avatars.crowd { gap: 8px; }
+.res-avatars.crowd .res-avatar {
+  width: 44px;
+  height: 44px;
+  font-size: 26px;
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, .16), 0 0 0 4px var(--pc-glow);
+}
+.res-avatars.crowd .res-avatar::before { font-size: 18px; top: -16px; }
 .results-hero h2 {
   outline: none;
-  margin: 18px 0 4px;
+  margin: 12px 0 4px;
   font-family: var(--font-display);
   font-weight: 400;
   font-size: 34px;
@@ -1104,8 +1198,24 @@ dialog::backdrop {
 .rank-score { grid-area: score; text-align: right; }
 .rank-score b { font-family: var(--font-display); font-weight: 400; font-size: 26px; line-height: 1; }
 .rank-score small { display: block; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); }
-.results .sheet-foot { flex-wrap: wrap; }
+.results .sheet-foot { flex-wrap: wrap; padding-bottom: 14px; }
 .results .sheet-foot .btn { flex: 1 1 140px; }
+/* Phone landscape: winner on the left, ranking on the right. */
+@media (max-height: 500px) and (min-aspect-ratio: 6/5) {
+  .results-card {
+    width: min(100%, 760px);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .results-card.is-solo { width: min(100%, 480px); grid-template-columns: minmax(0, 1fr); }
+  .results-hero { align-self: center; padding: 30px 18px 10px; max-height: 100%; overflow-y: auto; }
+  .ranking { padding-top: 16px; }
+  .results .sheet-foot { grid-column: 1 / -1; }
+  .res-avatar { width: 64px; height: 64px; font-size: 36px; }
+  .res-avatar::before { font-size: 24px; top: -20px; }
+  .results-hero h2 { margin-top: 12px; font-size: 28px; }
+}
 #confetti {
   position: fixed;
   inset: 0;
@@ -1267,7 +1377,7 @@ dialog::backdrop {
   <div class="results-card">
     <div class="results-hero">
       <div class="res-avatars" id="res-avatars"></div>
-      <h2 id="results-title" tabindex="-1" autofocus>Well played!</h2>
+      <h2 id="results-title" tabindex="-1" autofocus aria-describedby="res-sub">Well played!</h2>
       <p id="res-sub"></p>
       <span class="res-best" id="res-best" hidden></span>
     </div>
@@ -1356,6 +1466,8 @@ dialog::backdrop {
   const segmenter = (window.Intl && Intl.Segmenter) ? new Intl.Segmenter(undefined, { granularity: 'grapheme' }) : null;
   const graphemes = s => segmenter ? Array.from(segmenter.segment(s), x => x.segment) : Array.from(s);
   const PICTO = /\p{Extended_Pictographic}|\p{Regional_Indicator}|⃣/u;
+  // ❤ and ❤️ look the same on screen, so they count as one picture.
+  const bareEmoji = s => s.replace(/️/g, '');
   function fmtTime(ms) {
     const t = Math.floor(ms / 1000);
     return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
@@ -1419,7 +1531,7 @@ dialog::backdrop {
     const out = [];
     const seen = new Set();
     const push = (type, v) => {
-      const key = type + ':' + v.toLowerCase();
+      const key = type + ':' + bareEmoji(v).toLowerCase();
       if (!v || seen.has(key)) return;
       seen.add(key);
       out.push({ type, v });
@@ -1438,8 +1550,8 @@ dialog::backdrop {
     if (setId === 'custom') {
       const own = shuffle(customPool()).slice(0, pairs);
       if (own.length < pairs) {
-        const used = new Set(own.filter(x => x.type === 'emoji').map(x => x.v));
-        const extra = shuffle(MIX.filter(e => !used.has(e))).slice(0, pairs - own.length);
+        const used = new Set(own.filter(x => x.type === 'emoji').map(x => bareEmoji(x.v)));
+        const extra = shuffle(MIX.filter(e => !used.has(bareEmoji(e)))).slice(0, pairs - own.length);
         own.push(...extra.map(v => ({ type: 'emoji', v })));
       }
       return own;
@@ -1447,7 +1559,8 @@ dialog::backdrop {
     const pool = setId === 'mix' ? MIX : (SETS.find(s => s.id === setId) || SETS[0]).items;
     return shuffle(pool).slice(0, pairs).map(v => ({ type: 'emoji', v }));
   }
-  const photoSrc = id => (photos.find(p => p.id === id) || {}).src || '';
+  // Photos removed during a game stay on that game's cards (game.keep) until it ends.
+  const photoSrc = id => (photos.find(p => p.id === id) || ((game && game.keep) || []).find(p => p && p.id === id) || {}).src || '';
   function textScale(v) {
     const n = graphemes(v).length;
     return [0, .5, .42, .34, .28, .23, .2, .18, .16, .15, .14][Math.min(n, 10)];
@@ -1480,7 +1593,8 @@ dialog::backdrop {
           if (!AC) return;
           ctx = new AC();
         }
-        if (ctx.state === 'suspended') ctx.resume();
+        // iOS also reports 'interrupted' after a call or Siri.
+        if (ctx.state !== 'running' && ctx.state !== 'closed') Promise.resolve(ctx.resume()).catch(() => {});
       } catch (e) { ctx = null; }
     }
     function tone(f, { to = 0, at = 0, dur = .14, type = 'sine', vol = .1 } = {}) {
@@ -1513,13 +1627,21 @@ dialog::backdrop {
 
   /* ---------- Screen wake lock (optional) ---------- */
   let wakeLock = null;
+  let wakePending = false;
   async function keepAwake() {
+    if (wakeLock || wakePending || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+    wakePending = true;
     try {
-      if (!wakeLock && 'wakeLock' in navigator && document.visibilityState === 'visible') {
-        wakeLock = await navigator.wakeLock.request('screen');
-        wakeLock.addEventListener('release', () => { wakeLock = null; });
-      }
-    } catch (e) { wakeLock = null; }
+      const lock = await navigator.wakeLock.request('screen');
+      lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null; });
+      wakeLock = lock;
+      if (!game || game.done) releaseAwake();
+    } catch (e) { /* not allowed right now */ } finally { wakePending = false; }
+  }
+  function releaseAwake() {
+    const lock = wakeLock;
+    wakeLock = null;
+    if (lock) lock.release().catch(() => {});
   }
 
   /* ---------- Elements ---------- */
@@ -1555,7 +1677,9 @@ dialog::backdrop {
     const n = settings.playerCount;
     const items = pickItems(settings.set, settings.count / 2);
     const cards = shuffle(items.flatMap((_, k) => [{ k, s: 0, o: -1 }, { k, s: 0, o: -1 }]));
-    const first = n > 1 ? (((settings.lastFirst | 0) + 1) % n + n) % n : 0;
+    // Re-dealing a game nobody has played yet keeps the same first player.
+    const untouched = game && !game.done && game.moves === 0;
+    const first = n > 1 ? (untouched ? game.turn % n : (((settings.lastFirst | 0) + 1) % n + n) % n) : 0;
     settings.lastFirst = first;
     saveSettings();
     game = {
@@ -1571,14 +1695,22 @@ dialog::backdrop {
     saveGame();
     announce(n > 1 ? `New game. ${game.players[first].name} goes first.` : 'New game. Find all the pairs.');
     const dealMs = reduceMotion() ? 0 : Math.min(900, cards.length * 18) + 450;
-    if (settings.peek) later(startPeek, dealMs);
-    else if (n > 1 && !opts.quiet) later(() => toastTurn(true), Math.min(dealMs, 650));
+    if (settings.peek) {
+      // Hold the board from the deal until the peek ends.
+      rt.phase = 'peek';
+      later(startPeek, dealMs);
+    } else if (n > 1 && !opts.quiet) later(() => toastTurn(true), Math.min(dealMs, 650));
   }
 
   function serializeGame() {
     if (!game) return null;
+    const [a, b] = rt.sel;
+    const n = game.players.length;
+    // A miss or a hand-over that is still on screen has already cost the turn.
+    const passing = rt.phase === 'pass' || (rt.sel.length === 2 && game.cards[a].k !== game.cards[b].k);
     return {
       ...game,
+      turn: passing && n > 1 ? (game.turn + 1) % n : game.turn,
       cards: game.cards.map(c => ({ k: c.k, s: c.s === 2 ? 2 : 0, o: c.s === 2 ? c.o : -1 })),
       elapsed: currentElapsed(),
     };
@@ -1591,17 +1723,23 @@ dialog::backdrop {
     if (n < 1 || n > MAX_PLAYERS || !Array.isArray(g.scores) || g.scores.length !== n) return false;
     if (g.cards.length !== g.items.length * 2 || g.cards.length < 2) return false;
     if (!g.cards.every(c => c && Number.isInteger(c.k) && c.k >= 0 && c.k < g.items.length)) return false;
-    if (!g.items.every(it => it && (it.type === 'photo' ? photoSrc(it.id) : typeof it.v === 'string'))) return false;
+    const keep = Array.isArray(g.keep) ? g.keep.filter(p => p && typeof p.id === 'string' && typeof p.src === 'string') : [];
+    const hasPhoto = id => photoSrc(id) || keep.some(p => p.id === id);
+    if (!g.items.every(it => it && (it.type === 'photo' ? hasPhoto(it.id) : typeof it.v === 'string'))) return false;
     return true;
   }
   function restoreGame(g) {
     if (!validGame(g)) return false;
     const n = g.players.length;
+    const okFound = Array.isArray(g.found) && g.found.length === n &&
+      g.found.every(f => Array.isArray(f) && f.every(k => Number.isInteger(k) && k >= 0 && k < g.items.length));
     game = {
       ...g,
-      players: g.players.map((p, i) => ({ name: displayName(p.name, i), avatar: p.avatar || AVATARS[i], color: COLORS[i] })),
+      keep: Array.isArray(g.keep) ? g.keep.filter(p => p && typeof p.id === 'string' && typeof p.src === 'string') : [],
+      players: g.players.map((p, i) => ({ name: displayName(p && p.name, i), avatar: (p && p.avatar) || AVATARS[i], color: COLORS[i] })),
       cards: g.cards.map(c => ({ k: c.k, s: c.s === 2 ? 2 : 0, o: c.s === 2 ? clamp(c.o | 0, 0, n - 1) : -1 })),
-      found: Array.isArray(g.found) && g.found.length === n ? g.found : Array.from({ length: n }, () => []),
+      scores: g.scores.map(x => Math.max(0, x | 0)),
+      found: okFound ? g.found : Array.from({ length: n }, () => []),
       turn: clamp(g.turn | 0, 0, n - 1),
       elapsed: +g.elapsed || 0,
       moves: g.moves | 0,
@@ -1657,10 +1795,18 @@ dialog::backdrop {
       pic = document.createElement('span');
       pic.className = 'pic' + (it.type === 'text' ? ' is-text' : '');
       pic.textContent = it.v;
-      if (it.type === 'text') pic.style.setProperty('--ts', textScale(it.v));
     }
     front.prepend(pic);
+    if (it.type === 'text') fitText(pic);
     front.dataset.k = c.k;
+  }
+  // Words grow or shrink to fill about 80% of the card face on one line.
+  function fitText(pic) {
+    const base = textScale(pic.textContent);
+    pic.style.setProperty('--ts', base);
+    const w = pic.scrollWidth;
+    const room = pic.parentElement.clientWidth * 0.8;
+    if (w && room) pic.style.setProperty('--ts', Math.min(Math.max(base, 0.4), (base * room) / w).toFixed(3));
   }
   function clearFace(i) {
     const front = cardEl(i).querySelector('.front');
@@ -1727,7 +1873,9 @@ dialog::backdrop {
     if (!game.started) { game.started = true; startClock(); }
     c.s = 1;
     syncCard(i);
+    el.toast.classList.remove('show');
     rt.sel.push(i);
+    if (rt.sel.length === 1) announce(itemLabel(game.items[c.k], c.k));
     Sound.flip();
     if (rt.sel.length === 2) check();
   }
@@ -1744,6 +1892,7 @@ dialog::backdrop {
         rt.phase = 'miss';
         restartAnim(cardEl(a), 'is-miss');
         restartAnim(cardEl(b), 'is-miss');
+        announce(`${itemLabel(game.items[game.cards[b].k], game.cards[b].k)}. Not a match.`);
         Sound.miss();
         rt.missTimer = later(resolveMiss, 1150);
       }, 620);
@@ -1792,7 +1941,8 @@ dialog::backdrop {
         toast(`${p.name} goes again!`, p.color, p.avatar, 1100);
       } else {
         announce(`${p.name} found ${what} and has ${plural(game.scores[who], 'pair', 'pairs')}.`);
-        later(nextTurn, 500);
+        rt.phase = 'pass';
+        later(() => { rt.phase = 'idle'; nextTurn(); }, 500);
       }
     } else {
       announce(`Found ${what}. ${plural(left, 'pair', 'pairs')} to go.`);
@@ -1838,6 +1988,7 @@ dialog::backdrop {
     game.done = true;
     rt.phase = 'over';
     stopClock();
+    releaseAwake();
     updatePlayers();
     updateStatus();
     let best = null;
@@ -1847,9 +1998,10 @@ dialog::backdrop {
   }
 
   function recordBest() {
-    const all = store.get(KEYS.best, {}) || {};
+    let all = store.get(KEYS.best, {});
+    if (!all || typeof all !== 'object' || Array.isArray(all)) all = {};
     const key = `${game.set}:${game.count}`;
-    const prev = all[key];
+    const prev = all[key] && Number.isFinite(all[key].moves) && Number.isFinite(all[key].ms) ? all[key] : null;
     const cur = { moves: game.moves, ms: Math.round(game.elapsed) };
     const better = !prev || cur.moves < prev.moves || (cur.moves === prev.moves && cur.ms < prev.ms);
     if (better) { all[key] = cur; store.set(KEYS.best, all); }
@@ -1908,7 +2060,7 @@ dialog::backdrop {
         e.textContent = n > 1 ? 'No pairs yet' : 'Find every pair';
         f.appendChild(e);
       } else {
-        keys.slice().reverse().slice(0, 12).forEach(k => f.appendChild(miniPic(game.items[k])));
+        keys.slice().reverse().forEach(k => f.appendChild(miniPic(game.items[k])));
       }
       if (i === bump) restartAnim(li.querySelector('.p-score'), 'bump');
     });
@@ -1958,7 +2110,7 @@ dialog::backdrop {
   }
 
   /* ---------- Layout ---------- */
-  function fitGrid(n, W, H, gap) {
+  function fitGrid(n, W, H, gap, cap = Infinity) {
     const NARROWEST = 0.76;
     let best = null;
     for (let cols = 1; cols <= n; cols++) {
@@ -1970,33 +2122,54 @@ dialog::backdrop {
       if (cellW <= cellH) { w = cellW; h = Math.min(cellH, cellW / NARROWEST); }
       else { h = cellH; w = Math.min(cellW, cellH); }
       const size = Math.min(w, h);
+      const f = Math.min(1, cap / size);
+      const long = Math.max(w, h) * f;
       const empty = rows * cols - n;
-      const score = size * (1 - 0.06 * empty / cols) + 0.001 * w * h / Math.max(size, 1);
+      // Past the size cap many grids tie, so full rows win first and then longer cards.
+      const score = size * f * (1 - 0.06 * empty / cols) + (f < 1 ? 0.02 * (long - cap) : 0) + 0.001 * long;
       if (!best || score > best.score) best = { cols, rows, w, h, score };
     }
     return best || { cols: n, rows: 1, w: 8, h: 8 };
   }
 
+  // Picks how the score chips are drawn so every player stays visible without scrolling.
   function layoutPlayers() {
     const box = el.players;
     const n = game ? game.players.length : 2;
     let cols = 1;
     let mode = 'full';
     let tight = false;
+    let roomy = false;
+    let foundRows = 1;
     if (isLandscape()) {
       const W = box.clientWidth;
-      const per = (box.clientHeight - 12) / n;
-      mode = W >= 230 && per >= 76 ? 'full' : 'row';
-      tight = per < 54;
+      const H = box.clientHeight - 16;
+      const fits = (rows, chip, gap) => rows * chip + (rows - 1) * gap <= H;
+      if (W >= 230 && fits(n, 66, 14)) mode = 'full';
+      else if (fits(n, 52, 14)) mode = 'row';
+      else if (fits(n, 40, 12)) { mode = 'row'; tight = true; }
+      else { cols = 2; tight = true; mode = fits(Math.ceil(n / 2), 62, 12) ? 'stack' : 'mini'; }
+      roomy = mode === 'full' && W >= 280 && fits(n, 88, 18);
+      if (mode === 'full') {
+        // Spare height becomes extra lines of found pictures.
+        const gap = roomy ? 18 : 14;
+        const base = roomy ? 88 : 62;
+        const line = roomy ? 28 : 24;
+        const budget = (H - (n - 1) * gap) / n;
+        foundRows = clamp(Math.floor((budget - base) / line) + 1, 1, 4);
+      }
     } else {
       const W = box.clientWidth || window.innerWidth - 32;
       cols = W / n >= 84 ? n : Math.ceil(n / 2);
-      const per = W / cols;
-      mode = per >= 210 ? 'full' : per >= 150 ? 'row' : 'stack';
+      mode = W / cols >= 210 ? 'full' : 'stack';
+      // On short screens one slim row of 5-6 players leaves more room for the cards.
+      if (cols < n && window.innerHeight < 740) { cols = n; mode = 'col'; }
     }
     box.style.setProperty('--cols', cols);
+    box.style.setProperty('--found-rows', foundRows);
     box.dataset.mode = mode;
     if (tight) box.dataset.tight = ''; else delete box.dataset.tight;
+    if (roomy) box.dataset.roomy = ''; else delete box.dataset.roomy;
   }
 
   let lastFit = '';
@@ -2009,11 +2182,12 @@ dialog::backdrop {
     const H = r.height - pad * 2;
     if (W <= 0 || H <= 0) return;
     const n = game.cards.length;
-    let fit = fitGrid(n, W, H, 10);
-    const gap = clamp(Math.round(Math.min(fit.w, fit.h) * 0.1), 5, 16);
-    fit = fitGrid(n, W, H, gap);
+    // Cards stop growing at about a third of the table, so big iPads get big cards but never billboards.
+    const cap = Math.max(220, Math.round(Math.min(W, H) * 0.3));
+    let fit = fitGrid(n, W, H, 10, cap);
+    const gap = clamp(Math.round(Math.min(fit.w, fit.h, cap) * 0.1), 5, 16);
+    fit = fitGrid(n, W, H, gap, cap);
     let { w, h } = fit;
-    const cap = 220;
     if (Math.min(w, h) > cap) { const f = cap / Math.min(w, h); w *= f; h *= f; }
     w = Math.floor(w);
     h = Math.floor(h);
@@ -2027,6 +2201,7 @@ dialog::backdrop {
     s.setProperty('--m', Math.min(w, h) + 'px');
     s.setProperty('--gap', gap + 'px');
     s.setProperty('--bw', (fit.cols * w + (fit.cols - 1) * gap) + 'px');
+    el.board.querySelectorAll('.pic.is-text').forEach(fitText);
   }
   let rafId = 0;
   function scheduleLayout() {
@@ -2057,6 +2232,8 @@ dialog::backdrop {
       return d;
     };
 
+    hero.classList.toggle('many', n > 1 && winners.length > 2);
+    hero.classList.toggle('crowd', n > 1 && winners.length > 4);
     if (n === 1) {
       const p = game.players[0];
       hero.appendChild(avatar(p, true));
@@ -2069,7 +2246,6 @@ dialog::backdrop {
           : `Best: ${plural(best.best.moves, 'move', 'moves')} in ${fmtTime(best.best.ms)}`;
       }
     } else {
-      hero.classList.toggle('many', winners.length > 2);
       winners.forEach(i => hero.appendChild(avatar(game.players[i], true)));
       const names = winners.map(i => game.players[i].name);
       if (winners.length === 1) {
@@ -2105,6 +2281,7 @@ dialog::backdrop {
       });
     }
     list.hidden = n === 1;
+    list.parentElement.classList.toggle('is-solo', n === 1);
     openDialog(el.results);
     announce(`${title.textContent} ${sub.textContent}`);
     confetti(winners.map(i => game.players[i].color));
@@ -2385,6 +2562,10 @@ dialog::backdrop {
       rm.innerHTML = svgX();
       rm.setAttribute('aria-label', `Remove photo ${k + 1}`);
       rm.addEventListener('click', () => {
+        if (game && !game.done && game.items.some(it => it.type === 'photo' && it.id === p.id)) {
+          (game.keep = game.keep || []).push(p);
+          saveGame();
+        }
         photos = photos.filter(x => x.id !== p.id);
         savePhotos();
         renderThumbs();
@@ -2455,6 +2636,11 @@ dialog::backdrop {
     if (failed) $('#custom-hint').textContent += ` ${plural(failed, 'photo', 'photos')} couldn’t be opened.`;
   }
 
+  // After a deal the old card buttons are gone, so give focus to the new board.
+  function focusBoard() {
+    if (el.board.firstElementChild) el.board.firstElementChild.focus({ preventScroll: true });
+  }
+
   function openSetup() {
     renderSetup();
     $('#setup-keep').hidden = !(game && !game.done && game.moves > 0);
@@ -2466,6 +2652,8 @@ dialog::backdrop {
 
   /* ---------- Events ---------- */
   function bind() {
+    // iOS only paints :active press states when a touch listener exists.
+    document.addEventListener('touchstart', () => {}, { passive: true });
     el.board.addEventListener('click', e => {
       const b = e.target.closest('.card');
       if (!b) return;
@@ -2507,17 +2695,27 @@ dialog::backdrop {
       closeDialog(el.setup);
       closeDialog(el.results);
       newGame();
+      focusBoard();
     });
     lightDismiss(el.setup);
     lightDismiss(el.results);
     el.results.addEventListener('close', () => cancelAnimationFrame(confettiRaf));
-    $('#res-again').addEventListener('click', () => { closeDialog(el.results); newGame(); });
+    $('#res-again').addEventListener('click', () => {
+      closeDialog(el.results);
+      closeDialog(el.setup);
+      newGame();
+      focusBoard();
+    });
     $('#res-setup').addEventListener('click', () => { closeDialog(el.results); openSetup(); });
 
     radioKeys($('#seg-players'));
     radioKeys($('#sets'));
     radioKeys($('#counts'));
-    $('#rule-again').addEventListener('change', e => { settings.again = e.target.checked; saveSettingsSoon(); });
+    $('#rule-again').addEventListener('change', e => {
+      settings.again = e.target.checked;
+      if (game && !game.done) { game.again = settings.again; saveGame(); }
+      saveSettingsSoon();
+    });
     $('#rule-peek').addEventListener('change', e => { settings.peek = e.target.checked; saveSettingsSoon(); });
     $('#custom-text').addEventListener('input', e => {
       settings.customText = e.target.value.slice(0, 1000);
@@ -2561,7 +2759,8 @@ dialog::backdrop {
     el.sound.setAttribute('aria-pressed', settings.sound ? 'true' : 'false');
     bind();
     const saved = (data && data.game) || store.get(KEYS.game, null);
-    const resumed = saved && restoreGame(saved);
+    let resumed = false;
+    try { resumed = !!saved && restoreGame(saved); } catch (e) { store.del(KEYS.game); game = null; }
     if (!resumed) newGame({ quiet: loaded.fresh });
     else if (game.started && !game.done && game.players.length === 1) startClock();
     if (loaded.fresh) openSetup();
